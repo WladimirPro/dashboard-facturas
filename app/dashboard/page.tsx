@@ -641,5 +641,71 @@ export default function Dashboard() {
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     Monto: <span className="font-semibold">${currentInvoice.monto.toLocaleString()}</span>
                   </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Venc\
+                   <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Vencimiento: <span className="font-semibold">{currentInvoice.fechaVencimiento}</span>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Canales de Notificación:
+                    </label>
+                    <div className="flex gap-3">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={notificationChannels.email}
+                          onChange={(e) =>
+                            setNotificationChannels({ ...notificationChannels, email: e.target.checked })
+                          }
+                        />
+                        Email
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={notificationChannels.sms}
+                          onChange={(e) =>
+                            setNotificationChannels({ ...notificationChannels, sms: e.target.checked })
+                          }
+                        />
+                        SMS
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={notificationChannels.whatsapp}
+                          onChange={(e) =>
+                            setNotificationChannels({ ...notificationChannels, whatsapp: e.target.checked })
+                          }
+                        />
+                        WhatsApp
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Mensaje:
+                    </label>
+                    <textarea
+                      value={notificationMessage}
+                      onChange={(e) => setNotificationMessage(e.target.value)}
+                      rows={5}
+                      className="w-full p-2 rounded-md border border-blue-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm dark:text-white"
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button onClick={handleSendNotification} className="bg-blue-600 hover:bg-blue-700 text-white">
+                      Enviar Notificación
+                    </Button>
+                  </div>
+                </div>
+              )}
+          </DialogContent>
+      </Dialog>
+    </div>
+  </div>
+  )
+}
