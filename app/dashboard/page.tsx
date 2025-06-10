@@ -2,9 +2,15 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { onAuthStateChanged } from "firebase/auth"
+import { auth } from "@/lib/firebaseConfig"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { logoutUser } from "@/lib/authFunctions"
+import { collection, getDocs } from "firebase/firestore"
+import { db } from "@/lib/firebaseConfig"
+import { doc, updateDoc, arrayUnion } from "firebase/firestore"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Users,
@@ -26,138 +32,127 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { SettingsDialog } from "@/components/settings-dialog"
 
-// Datos simulados específicos para telecomunicaciones
-const mockData = {
-  stats: {
-    totalClientes: 45,
-    facturasPagadas: 32,
-    facturasPorVencer: 8,
-    facturasVencidas: 5,
-    montoTotal: 125000,
-  },
-  clientes: [
-    {
-      id: 1,
-      nombre: "Telecom Solutions S.A.",
-      email: "facturacion@telecomsolutions.com",
-      telefono: "+1-555-0123",
-      tipo: "Distribuidor",
-      facturas: [
-        {
-          id: 1,
-          concepto: "Cables de Fibra Óptica - Lote #2024-001",
-          monto: 15500,
-          fechaVencimiento: "2024-02-15",
-          estado: "pagado",
-          fechaPago: "2024-02-10",
-          categoria: "Fibra Óptica",
-        },
-        {
-          id: 2,
-          concepto: "Equipos de Transmisión - Pedido #TXM-445",
-          monto: 28000,
-          fechaVencimiento: "2024-03-15",
-          estado: "por_vencer",
-          fechaPago: null,
-          categoria: "Equipos de Transmisión",
-        },
-      ],
-    },
-    {
-      id: 2,
-      nombre: "Redes Móviles del Norte",
-      email: "compras@redesmoviles.com",
-      telefono: "+1-555-0124",
-      tipo: "Operador",
-      facturas: [
-        {
-          id: 3,
-          concepto: "Antenas Sectoriales 4G/5G - Orden #ANT-2024-15",
-          monto: 45000,
-          fechaVencimiento: "2024-01-20",
-          estado: "vencido",
-          fechaPago: null,
-          categoria: "Antenas y RF",
-        },
-        {
-          id: 4,
-          concepto: "Conectores y Adaptadores RF - Kit Completo",
-          monto: 8500,
-          fechaVencimiento: "2024-02-28",
-          estado: "pagado",
-          fechaPago: "2024-02-25",
-          categoria: "Conectores RF",
-        },
-      ],
-    },
-    {
-      id: 3,
-      nombre: "Infraestructura Digital Corp.",
-      email: "pagos@infradigital.com",
-      telefono: "+1-555-0125",
-      tipo: "Integrador",
-      facturas: [
-        {
-          id: 5,
-          concepto: "Torres de Telecomunicaciones - Proyecto Alpha",
-          monto: 85000,
-          fechaVencimiento: "2024-03-10",
-          estado: "por_vencer",
-          fechaPago: null,
-          categoria: "Infraestructura",
-        },
-      ],
-    },
-    {
-      id: 4,
-      nombre: "Conectividad Rural S.L.",
-      email: "admin@conectividadrural.com",
-      telefono: "+1-555-0126",
-      tipo: "ISP",
-      facturas: [
-        {
-          id: 6,
-          concepto: "Switches y Routers Empresariales",
-          monto: 22000,
-          fechaVencimiento: "2024-02-20",
-          estado: "vencido",
-          fechaPago: null,
-          categoria: "Equipos de Red",
-        },
-      ],
-    },
-  ],
+interface Factura {
+  id: string
+  concepto: string
+  fechaVencimiento: string
+  fechaPago?: string
+  monto: number
+  estado: string
+  categoria: string
+  clienteNombre: string
+}
+
+interface Cliente {
+  id: string
+  nombre: string
+  email: string
+  telefono: string
+  tipo: string
+  facturas: Factura[]
+}
+
+const calcularEstadoDinamico = (factura: Factura): string => {
+  if (factura.estado === "pagado") return "pagado"
+  const hoy = new Date()
+  const vencimiento = new Date(factura.fechaVencimiento)
+  return hoy > vencimiento ? "vencido" : "por_vencer"
 }
 
 export default function Dashboard() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [data, setData] = useState(mockData)
+  const [clientes, setClientes] = useState<Cliente[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [currentClient, setCurrentClient] = useState<any>(null)
   const [currentInvoice, setCurrentInvoice] = useState<any>(null)
+  const [showFacturaModal, setShowFacturaModal] = useState(false)
+  const [facturaClienteId, setFacturaClienteId] = useState<string | null>(null)
+  const [checkingAuth, setCheckingAuth] = useState(true)
+  const [guardandoFactura, setGuardandoFactura] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState("")
   const [notificationChannels, setNotificationChannels] = useState({
     email: true,
     sms: false,
     whatsapp: false,
   })
+  const [nuevaFactura, setNuevaFactura] = useState<Omit<Factura, "id">>({
+  concepto: "",
+  monto: 0,
+  fechaVencimiento: "",
+  estado: "por_vencer",
+  categoria: "Fibra Óptica",
+  clienteNombre: "", // 👈 Nuevo
+  }); 
+  const [facturaEditando, setFacturaEditando] = useState<Factura | null>(null)
   const [activeFilter, setActiveFilter] = useState("todos")
   const router = useRouter()
 
+  const obtenerNombreCliente = (id: string): string => {
+  const cliente = clientes.find((c) => c.id === id)
+  return cliente?.nombre || ""
+  } 
+
   useEffect(() => {
-    const auth = localStorage.getItem("isAuthenticated")
-    if (!auth) {
+  if (facturaClienteId && !facturaEditando) {
+      const nombre = obtenerNombreCliente(facturaClienteId)
+      setNuevaFactura((prev) => ({
+        ...prev,
+        clienteNombre: nombre,
+      }))
+    }
+  }, [facturaClienteId, facturaEditando])
+
+  useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    if (!user) {
       router.push("/")
     } else {
-      setIsAuthenticated(true)
-    }
-  }, [router])
+      const snapshot = await getDocs(collection(db, "clientes"))
+      const clientesData: Cliente[] = []
 
-  const handleLogout = () => {
-    localStorage.removeItem("isAuthenticated")
-    router.push("/")
-  }
+      for (const docSnap of snapshot.docs) {
+        const clienteData = docSnap.data() as Omit<Cliente, "id">
+        const clienteId = docSnap.id
+        const facturas = clienteData.facturas ?? []
+
+        let facturasActualizadas = false
+        const nuevasFacturas = facturas.map((factura) => {
+          const estadoCalculado = calcularEstadoDinamico(factura)
+          if (factura.estado !== estadoCalculado) {
+            facturasActualizadas = true
+            return { ...factura, estado: estadoCalculado }
+          }
+          return factura
+        })
+
+        if (facturasActualizadas) {
+          const ref = doc(db, "clientes", clienteId)
+          await updateDoc(ref, { facturas: nuevasFacturas })
+        }
+
+        clientesData.push({
+          id: clienteId,
+          ...clienteData,
+          facturas: nuevasFacturas,
+        })
+      }
+
+      setClientes(clientesData)
+      setCheckingAuth(false)
+    }
+  })
+
+  return () => unsubscribe()
+}, [router])
+
+if (checkingAuth) {
+  return <div className="p-6">Verificando autenticación...</div>
+}
+
+  const handleLogout = async () => {
+  await logoutUser();
+  router.push("/");
+  };
 
   const getEstadoBadge = (estado: string) => {
     switch (estado) {
@@ -234,7 +229,52 @@ export default function Dashboard() {
     setNotificationOpen(false)
   }
 
-  const filteredClientes = data.clientes.filter(
+  const agregarFactura = async (clienteId: string, factura: Factura) => {
+  const ref = doc(db, "clientes", clienteId)
+  await updateDoc(ref, {
+    facturas: arrayUnion(factura),
+  })
+}
+const editarFactura = async (clienteId: string, facturaActualizada: Factura) => {
+  const ref = doc(db, "clientes", clienteId)
+  const cliente = clientes.find(c => c.id === clienteId)
+  if (!cliente) return
+
+  const nuevasFacturas = cliente.facturas.map(f =>
+    f.id === facturaActualizada.id ? facturaActualizada : f
+  )
+
+  await updateDoc(ref, {
+    facturas: nuevasFacturas,
+  })
+
+  setClientes(prev =>
+    prev.map(c =>
+      c.id === clienteId ? { ...c, facturas: nuevasFacturas } : c
+    )
+  )
+}
+
+const eliminarFactura = async (clienteId: string, facturaId: string) => {
+  const ref = doc(db, "clientes", clienteId)
+  const cliente = clientes.find((c) => c.id === clienteId)
+  if (!cliente) return
+
+  const nuevasFacturas = cliente.facturas.filter(f => f.id !== facturaId)
+
+  await updateDoc(ref, {
+    facturas: nuevasFacturas,
+  })
+
+  setClientes(prev =>
+    prev.map(c =>
+      c.id === clienteId ? { ...c, facturas: nuevasFacturas } : c
+    )
+  )
+}
+
+
+  const filteredClientes = clientes.filter(
     (cliente) =>
       cliente.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
       cliente.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -242,45 +282,42 @@ export default function Dashboard() {
   )
 
   const filteredFacturas = (estado: string) => {
-    return data.clientes.flatMap((cliente) =>
-      cliente.facturas
-        .filter((factura) => (estado === "todos" ? true : factura.estado === estado))
-        .map((factura) => ({ cliente, factura })),
-    )
+  return clientes.flatMap((cliente) =>
+    cliente.facturas
+      .filter((factura) => (estado === "todos" ? true : factura.estado === estado))
+      .map((factura) => ({ cliente, factura }))
+  )
+}
+
+const totalClientes = clientes.length
+const allFacturas = clientes.flatMap((c) => c.facturas || [])
+
+const facturasPagadas = allFacturas.filter((f) => f.estado === "pagado").length
+const facturasPorVencer = allFacturas.filter((f) => f.estado === "por_vencer").length
+const facturasVencidas = allFacturas.filter((f) => f.estado === "vencido").length
+const montoTotal = allFacturas.reduce((sum, f) => sum + (f.monto || 0), 0)
+
+const generarReporte = () => {
+  const reporte = {
+    fecha: new Date().toLocaleDateString(),
+    empresa: "TelecomSupply - Insumos de Telecomunicaciones",
+    totalClientes,
+    facturasPagadas,
+    facturasPorVencer,
+    facturasVencidas,
+    montoTotal,
+    detalles: clientes.map((cliente) => ({
+      nombre: cliente.nombre,
+      tipo: cliente.tipo,
+      email: cliente.email,
+      facturas: cliente.facturas?.length ?? 0,
+      montoTotal: (cliente.facturas ?? []).reduce((sum, f) => sum + (f.monto || 0), 0),
+    })),
   }
 
-  const generarReporte = () => {
-    const reporte = {
-      fecha: new Date().toLocaleDateString(),
-      empresa: "TelecomSupply - Insumos de Telecomunicaciones",
-      totalClientes: data.stats.totalClientes,
-      facturasPagadas: data.stats.facturasPagadas,
-      facturasPorVencer: data.stats.facturasPorVencer,
-      facturasVencidas: data.stats.facturasVencidas,
-      montoTotal: data.stats.montoTotal,
-      detalles: data.clientes.map((cliente) => ({
-        nombre: cliente.nombre,
-        tipo: cliente.tipo,
-        email: cliente.email,
-        facturas: cliente.facturas.length,
-        montoTotal: cliente.facturas.reduce((sum, factura) => sum + factura.monto, 0),
-      })),
-    }
-
-    console.log("Reporte generado:", reporte)
-    alert("Reporte de facturación generado exitosamente. Revisa la consola para ver los detalles.")
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-900 dark:to-gray-800">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
-          <span className="text-blue-600 dark:text-blue-400 font-medium">Cargando sistema...</span>
-        </div>
-      </div>
-    )
-  }
+  console.log("Reporte generado:", reporte)
+  alert("Reporte de facturación generado exitosamente. Revisa la consola para ver los detalles.")
+}
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
@@ -323,7 +360,7 @@ export default function Dashboard() {
               <Users className="h-5 w-5 text-blue-200" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{data.stats.totalClientes}</div>
+              <div className="text-3xl font-bold">{totalClientes}</div>
               <p className="text-xs text-blue-200 mt-1">Empresas activas</p>
             </CardContent>
           </Card>
@@ -334,7 +371,7 @@ export default function Dashboard() {
               <CheckCircle className="h-5 w-5 text-emerald-200" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{data.stats.facturasPagadas}</div>
+              <div className="text-3xl font-bold">{facturasPagadas}</div>
               <p className="text-xs text-emerald-200 mt-1">Al día</p>
             </CardContent>
           </Card>
@@ -345,7 +382,7 @@ export default function Dashboard() {
               <Clock className="h-5 w-5 text-amber-200" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{data.stats.facturasPorVencer}</div>
+              <div className="text-3xl font-bold">{facturasPorVencer}</div>
               <p className="text-xs text-amber-200 mt-1">Próximas</p>
             </CardContent>
           </Card>
@@ -356,7 +393,7 @@ export default function Dashboard() {
               <AlertTriangle className="h-5 w-5 text-red-200" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{data.stats.facturasVencidas}</div>
+              <div className="text-3xl font-bold">{facturasVencidas}</div>
               <p className="text-xs text-red-200 mt-1">Requieren atención</p>
             </CardContent>
           </Card>
@@ -367,7 +404,7 @@ export default function Dashboard() {
               <FileText className="h-5 w-5 text-purple-200" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${data.stats.montoTotal.toLocaleString()}</div>
+              <div className="text-2xl font-bold">${(montoTotal || 0).toLocaleString()}</div>
               <p className="text-xs text-purple-200 mt-1">Facturación activa</p>
             </CardContent>
           </Card>
@@ -422,6 +459,16 @@ export default function Dashboard() {
                           <CardDescription className="text-gray-600 dark:text-gray-400">
                             {cliente.email} • {cliente.telefono}
                           </CardDescription>
+                          <Button
+                            size="sm"
+                            className="mt-2 bg-blue-600 text-white hover:bg-blue-700"
+                            onClick={() => {
+                              setFacturaClienteId(cliente.id)
+                              setShowFacturaModal(true)
+                            }}
+                          >
+                            + Nueva Factura
+                          </Button>
                         </div>
                       </div>
                     </CardHeader>
@@ -435,27 +482,50 @@ export default function Dashboard() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
                                 {getCategoriaIcon(factura.categoria)}
-                                <div className="font-semibold text-gray-800 dark:text-gray-200">{factura.concepto}</div>
+                                <div className="font-semibold text-gray-800 dark:text-gray-200">
+                                  {factura.clienteNombre} - {factura.concepto}
+                                </div>
                               </div>
                               <div className="text-sm text-gray-600 dark:text-gray-400">
-                                <span className="font-medium">Vencimiento:</span> {factura.fechaVencimiento} •{" "}
+                                <span className="font-medium">Vencimiento:</span> {factura.fechaVencimiento} •{' '}
                                 <span className="font-medium">${factura.monto.toLocaleString()}</span>
                               </div>
-                              <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">{factura.categoria}</div>
+                              <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                                {factura.categoria}
+                              </div>
                             </div>
                             <div className="flex items-center gap-3">
                               {getEstadoBadge(factura.estado)}
-                              {(factura.estado === "por_vencer" || factura.estado === "vencido") && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="border-blue-200 hover:bg-blue-50 dark:border-gray-600 dark:hover:bg-gray-700"
-                                  onClick={() => enviarNotificacion(cliente, factura)}
-                                >
-                                  <Bell className="w-3 h-3 mr-1" />
-                                  Notificar
-                                </Button>
-                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setFacturaClienteId(cliente.id);
+                                  setFacturaEditando(factura);
+                                  setNuevaFactura({
+                                    concepto: factura.concepto,
+                                    monto: factura.monto,
+                                    fechaVencimiento: factura.fechaVencimiento,
+                                    estado: factura.estado,
+                                    categoria: factura.categoria,
+                                    clienteNombre: factura.clienteNombre,
+                                  });
+                                  setShowFacturaModal(true);
+                                }}
+                              >
+                                Editar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => {
+                                  if (confirm("¿Estás seguro de eliminar esta factura?")) {
+                                    eliminarFactura(cliente.id, factura.id)
+                                  }
+                                }}
+                              >
+                                Eliminar
+                              </Button>
                             </div>
                           </div>
                         ))}
@@ -564,7 +634,7 @@ export default function Dashboard() {
                         <div className="flex items-center gap-2 mb-2">
                           {getCategoriaIcon(factura.categoria)}
                           <div className="font-semibold text-gray-800 dark:text-gray-200">
-                            {cliente.nombre} - {factura.concepto}
+                            {factura.clienteNombre} - {factura.concepto}
                           </div>
                           {getTipoBadge(cliente.tipo)}
                         </div>
@@ -705,6 +775,146 @@ export default function Dashboard() {
               )}
           </DialogContent>
       </Dialog>
+      <Dialog open={showFacturaModal} onOpenChange={setShowFacturaModal}>
+  <DialogContent className="sm:max-w-lg bg-white dark:bg-gray-900 border-blue-200 dark:border-gray-700">
+    <DialogHeader>
+      <DialogTitle className="text-xl font-semibold text-blue-600 dark:text-blue-400">
+        {facturaEditando ? "Editar Factura" : "Nueva Factura"}
+      </DialogTitle>
+    </DialogHeader>
+    {facturaClienteId && (() => {
+      const cliente = clientes.find((c) => c.id === facturaClienteId)
+      if (!cliente) return null
+
+      return (
+        <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg border border-blue-200 dark:border-blue-800 mb-4">
+          <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Factura para:</div>
+          <div className="font-semibold text-gray-800 dark:text-gray-200">{cliente.nombre}</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">{cliente.email} • {cliente.telefono}</div>
+        </div>
+      )
+    })()}
+
+    <div className="space-y-4">
+      <div>
+        <label className="text-sm">Concepto</label>
+        <Input
+          value={nuevaFactura.concepto}
+          onChange={(e) =>
+            setNuevaFactura({ ...nuevaFactura, concepto: e.target.value })
+          }
+        />
+      </div>
+      <div>
+        <label className="text-sm">Nombre del Cliente</label>
+        <Input
+          value={nuevaFactura.clienteNombre}
+          disabled
+          className="bg-gray-100 dark:bg-gray-800 cursor-not-allowed"
+        />
+      </div>
+      <div>
+        <label className="text-sm">Monto</label>
+        <Input
+          type="number"
+          value={nuevaFactura.monto}
+          onChange={(e) =>
+            setNuevaFactura({ ...nuevaFactura, monto: parseFloat(e.target.value) })
+          }
+        />
+      </div>
+      <div>
+        <label className="text-sm">Fecha de Vencimiento</label>
+        <Input
+          type="date"
+          value={nuevaFactura.fechaVencimiento}
+          onChange={(e) =>
+            setNuevaFactura({ ...nuevaFactura, fechaVencimiento: e.target.value })
+          }
+        />
+      </div>
+      <div>
+        <label className="text-sm">Categoría</label>
+        <select
+          value={nuevaFactura.categoria}
+          onChange={(e) =>
+            setNuevaFactura({ ...nuevaFactura, categoria: e.target.value })
+          }
+          className="w-full border border-blue-200 dark:border-gray-600 rounded p-2 bg-white dark:bg-gray-800"
+        >
+          <option value="Fibra Óptica">Fibra Óptica</option>
+          <option value="Antenas y RF">Antenas y RF</option>
+          <option value="Equipos de Red">Equipos de Red</option>
+          <option value="Equipos de Transmisión">Equipos de Transmisión</option>
+        </select>
+      </div>
+      <div className="flex justify-end">
+        <Button
+          className="bg-blue-600 text-white hover:bg-blue-700"
+          disabled={guardandoFactura}
+          onClick={async () => {
+            if (!facturaClienteId) return;
+
+            if (
+              !nuevaFactura.concepto ||
+              nuevaFactura.monto <= 0 ||
+              !nuevaFactura.fechaVencimiento ||
+              !nuevaFactura.clienteNombre
+            ) {
+              alert("Por favor, completa todos los campos correctamente.");
+              return;
+            }
+
+            setGuardandoFactura(true);
+
+            if (facturaEditando) {
+              const facturaActualizada = { ...facturaEditando, ...nuevaFactura };
+              await editarFactura(facturaClienteId, facturaActualizada);
+              setClientes((prev) =>
+                prev.map((c) =>
+                  c.id === facturaClienteId
+                    ? {
+                        ...c,
+                        facturas: c.facturas.map((f) =>
+                          f.id === facturaActualizada.id ? facturaActualizada : f
+                        ),
+                      }
+                    : c
+                )
+              );
+              setFacturaEditando(null);
+            } else {
+              const nueva = { ...nuevaFactura, id: crypto.randomUUID() };
+              await agregarFactura(facturaClienteId, nueva);
+              setClientes((prev) =>
+                prev.map((c) =>
+                  c.id === facturaClienteId
+                    ? { ...c, facturas: [...c.facturas, nueva] }
+                    : c
+                )
+              );
+            }
+
+            setNuevaFactura({
+              concepto: "",
+              monto: 0,
+              fechaVencimiento: "",
+              estado: "por_vencer",
+              categoria: "Fibra Óptica",
+              clienteNombre: obtenerNombreCliente(facturaClienteId),
+            })
+
+            setShowFacturaModal(false);
+            setGuardandoFactura(false);
+          }}
+        >
+          Guardar Factura
+        </Button>
+      </div>
+      </div>
+  </DialogContent>
+</Dialog>
+
     </div>
   </div>
   )

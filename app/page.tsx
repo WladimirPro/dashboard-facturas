@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Eye, EyeOff, Radio, Wifi } from "lucide-react"
+import { loginUser } from "@/lib/authFunctions" // Asegúrate de tener esta importación correcta
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -18,19 +19,19 @@ export default function LoginPage() {
   const router = useRouter()
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
+  e.preventDefault()
+  setIsLoading(true)
 
-    setTimeout(() => {
-      if (email === "admin@telecomsupply.com" && password === "teleco2024") {
-        localStorage.setItem("isAuthenticated", "true")
-        router.push("/dashboard")
-      } else {
-        alert("Credenciales incorrectas. Usa: admin@telecomsupply.com / teleco2024")
-      }
-      setIsLoading(false)
-    }, 1000)
+  try {
+    await loginUser(email, password)
+    localStorage.setItem("isAuthenticated", "true")
+    router.push("/dashboard")
+  } catch (error: any) {
+    alert("Credenciales incorrectas o error en el login.\n" + error.message)
+  } finally {
+    setIsLoading(false)
   }
+}
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 px-4">
@@ -58,7 +59,7 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@telecomsupply.com"
+                placeholder=""
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="h-12 border-gray-200 dark:border-gray-600 focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
@@ -73,7 +74,7 @@ export default function LoginPage() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="teleco2024"
+                  placeholder=""
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="h-12 border-gray-200 dark:border-gray-600 focus:border-blue-500 focus:ring-blue-500 pr-12 dark:bg-gray-800 dark:text-white"
@@ -105,14 +106,6 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
-          <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-xl border border-blue-100 dark:border-blue-800">
-            <div className="flex items-center gap-2 mb-2">
-              <Wifi className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Credenciales de Acceso</p>
-            </div>
-            <p className="text-sm text-blue-700 dark:text-blue-300">Email: admin@telecomsupply.com</p>
-            <p className="text-sm text-blue-700 dark:text-blue-300">Contraseña: teleco2024</p>
-          </div>
         </CardContent>
       </Card>
     </div>
