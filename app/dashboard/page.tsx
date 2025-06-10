@@ -360,8 +360,8 @@ const generarReporte = () => {
               <Users className="h-5 w-5 text-blue-200" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{totalClientes}</div>
-              <p className="text-xs text-blue-200 mt-1">Empresas activas</p>
+              <div className="text-3xl font-bold">{allFacturas.length}</div>
+              <p className="text-xs text-blue-200 mt-1">Registradas en el sistema</p>
             </CardContent>
           </Card>
 
