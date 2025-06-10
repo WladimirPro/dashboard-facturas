@@ -214,7 +214,7 @@ if (checkingAuth) {
     setCurrentClient(cliente)
     setCurrentInvoice(factura)
     setNotificationMessage(
-      `Estimados ${cliente.nombre},\n\nLes recordamos que su factura "${factura.concepto}" por $${factura.monto.toLocaleString()} tiene vencimiento el ${factura.fechaVencimiento}.\n\nPor favor, procedan con el pago para evitar interrupciones en el suministro de insumos de telecomunicaciones.\n\nSaludos cordiales,\nEquipo de Facturación - TelecomSupply`,
+      `Estimados ${cliente.nombre},\n\nLes recordamos que su factura "${factura.concepto}" por $${factura.monto.toLocaleString()} tiene vencimiento el ${factura.fechaVencimiento}.\n\nPor favor, procedan con el pago para evitar interrupciones en el suministro de insumos de telecomunicaciones.\n\nSaludos cordiales,\nEquipo de Facturación - TicaShop`,
     )
     setNotificationOpen(true)
   }
@@ -300,7 +300,7 @@ const montoTotal = allFacturas.reduce((sum, f) => sum + (f.monto || 0), 0)
 const generarReporte = () => {
   const reporte = {
     fecha: new Date().toLocaleDateString(),
-    empresa: "TelecomSupply - Insumos de Telecomunicaciones",
+    empresa: "TicaShop - Insumos de Telecomunicaciones",
     totalClientes,
     facturasPagadas,
     facturasPorVencer,
@@ -331,7 +331,7 @@ const generarReporte = () => {
               </div>
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
-                  TelecomSupply
+                  TicaShop
                 </h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Sistema de Gestión de Facturación</p>
               </div>

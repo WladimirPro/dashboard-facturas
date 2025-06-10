@@ -43,7 +43,7 @@ export default function LoginPage() {
           </div>
           <div>
             <CardTitle className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
-              TelecomSupply
+              TicaShop
             </CardTitle>
             <CardDescription className="text-gray-600 dark:text-gray-400 mt-2">
               Sistema de Gestión de Pagos - Insumos de Telecomunicaciones
