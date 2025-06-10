@@ -8,7 +8,7 @@ import { AccessibilityProvider } from "@/components/accessibility-provider"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "TelecomSupply - Sistema de Gestión de Pagos",
+  title: "TicaShop - Sistema de Gestión de Pagos",
   description: "Sistema de gestión de facturación para insumos de telecomunicaciones",
     generator: 'v0.dev'
 }
